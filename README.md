@@ -1,5 +1,9 @@
 # BayGW
 
+## Under construction 🛠️
+
+Warning! This project is in an active-development phase. 
+
 ## Overview of the mathematics
 
 The normalizing flow is a series of invertible maps which transform a D-dimensional standard normal variable $z$ to our target distribution,
