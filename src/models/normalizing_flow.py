@@ -1,70 +1,57 @@
 import torch
 import torch.nn as nn
-
-class NormalizingFlow(nn.Module):
-    def __init__(self, input_dim, hidden_dim=512, n_flows=5):
-        super(NormalizingFlow, self).__init__()
-        self.input_dim = input_dim
-        self.n_flows = n_flows
-        self.flows = nn.ModuleList([FlowLayer(input_dim, hidden_dim) for _ in range(n_flows)])
-        self.base_distribution = torch.distributions.Normal(torch.zeros(input_dim), torch.ones(input_dim))
+import torch.nn.functional as F
 
 
-    def forward(self, x):
-        log_det_Jacobian = 0
-        z = x
-        for flow in self.flows:
-            z, log_det = flow(z)
-            log_det_Jacobian += log_det
-
-        log_prob_base = self.base_distribution.log_prob(z).sum(dim=1)
-        log_prob = log_prob_base + log_det_Jacobian
-
-        return log_prob, log_det_Jacobian
-
-    def reverse(self, z):
-        for flow in reversed(self.flows):
-            z = flow.reverse(z)
-        return z
-
-    def sample(self, num_samples):
-        z = torch.randn(num_samples, self.input_dim)
-        return self.reverse(z)
-
-
-class FlowLayer(nn.Module):
-    def __init__(self, input_dim, hidden_dim):
-        super(FlowLayer, self).__init__()
+class RealNVP(nn.Module):
+    def __init__(self, input_dim, hidden_dim, conditioning_dim):
+        super(RealNVP, self).__init__()
 
         self.input_dim = input_dim
-        self.net = nn.Sequential(
-            nn.Linear(input_dim // 2, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, input_dim // 2),
-            nn.Tanh()
+        self.conditioning_dim = conditioning_dim
+        self.hidden_dim = hidden_dim
+
+        # Neural network for computing shift and scale
+        self.nn = nn.Sequential(
+            nn.Linear(input_dim // 2 + conditioning_dim, hidden_dim),
+            nn.LeakyReLU(),  # LeakyReLU to avoid dead neurons
+            nn.Linear(hidden_dim, input_dim // 2 * 2),  # Output size is input_dim (for shift and scale)
         )
-        self.mask = self.create_mask(input_dim)
 
-    def forward(self, x):
-        x1 = x[:, :self.input_dim // 2]
-        x2 = x[:, self.input_dim // 2:]
+        # Weight initialization (Xavier/Glorot initialization is a good default)
+        for m in self.nn:
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
 
-        s = self.net(x2)
-        y = torch.cat((x1, x2 + s), dim=1)
+    def forward(self, x, conditioning):
+        half_size = self.input_dim // 2
+        x1, x2 = x[:, :half_size], x[:, half_size:]
 
-        log_det_Jacobian = torch.sum(torch.log(torch.abs(1 + s)), dim=1)
-        return y, log_det_Jacobian
+        # Concatenate conditioning information to the first part of the input
+        conditioned_input = torch.cat([x1, conditioning], dim=-1)
 
-    def reverse(self, y):
-        y1 = y[:, :self.input_dim // 2]
-        y2 = y[:, self.input_dim // 2:]
+        # Pass through the network to get shift and scale
+        shift_scale = self.nn(conditioned_input)  # This should have size (batch_size, input_dim)
 
-        s = self.net(y2)
-        x = torch.cat((y1, y2 - s), dim=1)
-        return x
+        # Split the output into shift and scale, both should have size (batch_size, input_dim // 2)
+        shift, scale = shift_scale.chunk(2, dim=-1)
 
-    def create_mask(self, input_dim):
-        mask = torch.zeros(input_dim)
-        mask[::2] = 1
-        return mask
+        # Apply the transformation to x2
+        z = x2 * torch.exp(scale) + shift
+        log_det_jacobian = scale.sum(dim=-1)
 
+        return torch.cat([x1, z], dim=-1), log_det_jacobian
+
+    def nll_loss(self, x, conditioning):
+        # Forward pass
+        z, log_det_jacobian = self(x, conditioning)
+
+        # Assuming a standard Gaussian prior (N(0, I) for the latent z)
+        log_prob = -0.5 * torch.sum(z ** 2, dim=-1)  # log p(z) for each sample
+
+        # Combine log-likelihood of z and log-det-Jacobian from flow transformation
+        loss = -log_prob - log_det_jacobian
+
+        return loss.mean()  # Return the mean loss over the batch

@@ -1,54 +1,67 @@
 import torch
 import torch.optim as optim
-from torch.utils.data import DataLoader
-from tqdm import tqdm  # For the progress bar
-from src.models.normalizing_flow import NormalizingFlow
-from src.data.dataset import GWDataset
+import torch.nn.functional as F
+from tqdm import tqdm
 
-class Trainer:
-    def __init__(self, model, train_data, batch_size=32, lr=1e-3, epochs=100, model_save_path=None):
-        """
-        Initialize the training setup.
 
-        Parameters:
-        - model: The normalizing flow model
-        - train_data: The training dataset
-        - batch_size: The batch size for training
-        - lr: The learning rate
-        - epochs: The number of epochs to train
-        """
-        self.model = model
-        self.train_data = train_data
-        self.batch_size = batch_size
-        self.lr = lr
-        self.epochs = epochs
-        self.model_save_path = model_save_path
+def train(model, train_loader, val_loader, optimizer, scheduler, num_epochs, device, patience=5):
+    best_val_loss = float('inf')  # Start with a high initial validation loss
+    epochs_without_improvement = 0  # Counter for epochs without improvement
 
-        self.optimizer = optim.Adam(model.parameters(), lr=self.lr)
-        self.loss_fn = torch.nn.MSELoss()
+    for epoch in range(num_epochs):
+        model.train()  # Set the model to training mode
+        running_train_loss = 0.0
 
-    def train(self):
-        dataloader = DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True)
+        # Wrap the train_loader with tqdm to display progress bar
+        with tqdm(train_loader, desc=f"Training Epoch {epoch + 1}/{num_epochs}", unit="batch") as train_bar:
+            for batch_idx, (x_train, conditioning_train) in enumerate(train_bar):
+                x_train, conditioning_train = x_train.to(device), conditioning_train.to(device)
 
-        for epoch in range(self.epochs):
-            total_loss = 0
-            epoch_bar = tqdm(dataloader, desc=f"Epoch [{epoch + 1}/{self.epochs}]", ncols=100)
-
-            for batch in epoch_bar:
-                self.optimizer.zero_grad()
-
-                log_prob, log_det_jacobian = self.model(batch)
-
-                loss = -log_prob.mean()
+                optimizer.zero_grad()
+                loss = model.nll_loss(x_train, conditioning_train)
                 loss.backward()
-                self.optimizer.step()
+                optimizer.step()
 
-                total_loss += loss.item()
-                epoch_bar.set_postfix(loss=total_loss / (epoch_bar.n + 1))
+                running_train_loss += loss.item()
 
-            print(f"Epoch [{epoch + 1}/{self.epochs}], Loss: {total_loss / len(dataloader):.4f}")
+                # Update progress bar description with current train loss
+                train_bar.set_postfix(loss=running_train_loss / (batch_idx + 1))
 
-        # Save the model after training is complete
-        if self.model_save_path:
-            print(f"Saving model to {self.model_save_path}")
-            torch.save(self.model.state_dict(), self.model_save_path)
+        # Validation after every epoch
+        val_loss = evaluate(model, val_loader, device)
+        print(f"Epoch [{epoch + 1}/{num_epochs}] - Validation Loss: {val_loss:.4f}")
+
+        # Step the scheduler based on validation loss
+        scheduler.step(val_loss)
+
+        # Early stopping logic
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            epochs_without_improvement = 0  # Reset counter if validation loss improves
+        else:
+            epochs_without_improvement += 1
+
+        # If validation loss hasn't improved for 'patience' epochs, stop training
+        if epochs_without_improvement >= patience:
+            print(f"Early stopping: No improvement in validation loss for {patience} epochs.")
+            break
+
+
+def evaluate(model, val_loader, device):
+    model.eval()  # Set the model to evaluation mode
+    running_val_loss = 0.0
+
+    # Wrap the val_loader with tqdm to display progress bar for evaluation
+    with tqdm(val_loader, desc="Evaluating", unit="batch") as val_bar:
+        with torch.no_grad():  # No gradients needed for validation
+            for x_val, conditioning_val in val_bar:
+                x_val, conditioning_val = x_val.to(device), conditioning_val.to(device)
+
+                # Compute validation loss
+                loss = model.nll_loss(x_val, conditioning_val)
+                running_val_loss += loss.item()
+
+                # Update progress bar description with current val loss
+                val_bar.set_postfix(loss=running_val_loss / (val_bar.n + 1))
+
+    return running_val_loss / len(val_loader)

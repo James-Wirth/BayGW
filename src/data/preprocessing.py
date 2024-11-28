@@ -1,11 +1,7 @@
-import numpy as np
 import torch
-from pycbc import waveform
-from pycbc.detector import Detector
 from pycbc.catalog import find_event_in_catalog
 
-
-def load_gw_data(event, duration=4, sample_rate=2048):
+def load_gw_data(event, duration=2, sample_rate=2048):
     """
     Load a gravitational wave event from the PyCBC catalog, then resample and preprocess it.
 

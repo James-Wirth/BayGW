@@ -1,9 +1,7 @@
 import torch
 from pycbc.waveform import get_td_waveform
-from pycbc import waveform
 
-
-def generate_gw_signal(m1, m2, f_lower=30.0, duration=4, sample_rate=2048):
+def generate_gw_signal(m1, m2, f_lower=30.0, duration=2, sample_rate=2048):
     """
     Generate a synthetic gravitational wave signal for given component masses.
 
