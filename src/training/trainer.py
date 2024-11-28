@@ -1,40 +1,60 @@
-from torch.optim.lr_scheduler import StepLR
 import torch
-import tqdm
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset
+
+
+class NormalizingFlow(nn.Module):
+    def __init__(self, input_dim, hidden_dim):
+        super(NormalizingFlow, self).__init__()
+        self.net = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, input_dim)
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
 
 class Trainer:
-    def __init__(self, model, optimizer, data_loader, config):
+    def __init__(self, model, data, batch_size=64, lr=1e-3, epochs=10):
         self.model = model
-        self.optimizer = optimizer
-        self.data_loader = data_loader
-        self.config = config
-        self.scheduler = StepLR(optimizer, step_size=config.LR_SCHEDULER_STEP, gamma=config.LR_SCHEDULER_GAMMA)
+        self.data = data
+        self.batch_size = batch_size
+        self.lr = lr
+        self.epochs = epochs
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+        self.dataloader = DataLoader(TensorDataset(self.data), batch_size=self.batch_size, shuffle=True)
+
+        self.optimizer = optim.Adam(self.model.parameters(), lr=self.lr)
+        self.loss_fn = nn.MSELoss()
+
+        self.model.to(self.device)
 
     def train(self):
         self.model.train()
-        for epoch in range(self.config.EPOCHS):
+        for epoch in range(self.epochs):
             total_loss = 0
-            print(f"Epoch {epoch + 1}/{self.config.EPOCHS}")
-
-            for batch in tqdm.tqdm(self.data_loader, desc="Training Batches"):
-                batch = batch.to(self.config.DEVICE)
-
-                batch += torch.randn_like(batch) * 0.01
-                z, log_jacobians = self.model(batch)
-
-                base_log_prob = self.model.base_dist.log_prob(z).sum(dim=-1)
-                scaled_base_log_prob = base_log_prob / self.config.INPUT_DIM
-                scaled_log_jacobians = log_jacobians / self.config.INPUT_DIM
-
-                log_jacobian_penalty = torch.mean(torch.abs(scaled_log_jacobians))
-                loss = torch.mean(-scaled_log_jacobians + scaled_base_log_prob) + 0.01 * log_jacobian_penalty
+            for batch in self.dataloader:
+                signals = batch[0].to(self.device)
 
                 self.optimizer.zero_grad()
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-                self.optimizer.step()
+
+                output = self.model(signals)
+
+                loss = self.loss_fn(output, signals)
                 total_loss += loss.item()
 
-                print(f"Epoch {epoch + 1}, Batch Loss: {loss.item()}")
+                loss.backward()
+                self.optimizer.step()
 
-            self.scheduler.step()
+            print(f"Epoch [{epoch + 1}/{self.epochs}], Loss: {total_loss / len(self.dataloader)}")
+
+
+def train_flow(model, data, batch_size=64, lr=1e-3, epochs=10):
+    trainer = Trainer(model, data, batch_size, lr, epochs)
+    trainer.train()
