@@ -15,5 +15,6 @@ class Preprocessor:
 
     def preprocess(self, signal):
         signal = self.pad_or_truncate(signal)
-        signal = (signal - np.mean(signal)) / np.std(signal)  # Normalize
+        signal = (signal - np.mean(signal)) / (np.std(signal) + 1e-6)  # Normalize
+        signal = np.clip(signal, -5.0, 5.0)  # Clip extreme values
         return torch.tensor(signal, dtype=torch.float32)

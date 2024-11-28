@@ -1,9 +1,8 @@
-from tqdm import tqdm
 import torch
 from src.config import Config
 from src.data.signal_generator import SignalGenerator
 from src.data.dataset import GWSignalDataset
-from src.models.normalizing_flow import NormalizingFlow
+from src.models.normalizing_flow import NormalizingFlow, initialize_weights
 from src.training.trainer import Trainer
 from src.data.preprocessing import Preprocessor
 from torch.utils.data import DataLoader
@@ -15,14 +14,15 @@ def main():
 
     signal_gen = SignalGenerator(config)
     print("Generating signals...")
-    signals = [preprocessor.preprocess(signal_gen.generate_signal(30, 30)) for _ in tqdm(range(1000))]
+    signals = [preprocessor.preprocess(signal_gen.generate_signal(30, 30)) for _ in range(100)]
 
     dataset = GWSignalDataset(signals)
     data_loader = DataLoader(dataset, batch_size=config.BATCH_SIZE, shuffle=True)
 
     model = NormalizingFlow(input_dim=config.INPUT_DIM, hidden_dims=config.HIDDEN_DIMS, num_layers=config.FLOW_LAYERS)
+    model.apply(initialize_weights)
     model.to(config.DEVICE)
-    optimizer = torch.optim.Adam(model.parameters(), lr=config.LEARNING_RATE)
+    optimizer = torch.optim.Adam(model.parameters(), lr=config.LEARNING_RATE, weight_decay=1e-5)
 
     print("Starting training...")
     trainer = Trainer(model, optimizer, data_loader, config)
@@ -37,7 +37,6 @@ def load_model(model_path, config):
     model.load_state_dict(torch.load(model_path))
     model.to(config.DEVICE)
     model.eval()
-    print(f"Model loaded from {model_path}")
     return model
 
 def sample_signals(model, num_samples, config):

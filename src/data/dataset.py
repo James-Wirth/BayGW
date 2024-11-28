@@ -10,4 +10,5 @@ class GWSignalDataset(Dataset):
         return len(self.signals)
 
     def __getitem__(self, idx):
-        return torch.tensor(self.signals[idx], dtype=torch.float32)
+        signal = self.signals[idx]
+        return signal.clone().detach()
