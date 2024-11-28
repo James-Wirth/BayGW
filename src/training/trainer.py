@@ -6,7 +6,7 @@ from src.models.normalizing_flow import NormalizingFlow
 from src.data.dataset import GWDataset
 
 class Trainer:
-    def __init__(self, model, train_data, batch_size=32, lr=1e-3, epochs=100):
+    def __init__(self, model, train_data, batch_size=32, lr=1e-3, epochs=100, model_save_path=None):
         """
         Initialize the training setup.
 
@@ -22,6 +22,7 @@ class Trainer:
         self.batch_size = batch_size
         self.lr = lr
         self.epochs = epochs
+        self.model_save_path = model_save_path
 
         self.optimizer = optim.Adam(model.parameters(), lr=self.lr)
         self.loss_fn = torch.nn.MSELoss()
@@ -46,3 +47,8 @@ class Trainer:
                 epoch_bar.set_postfix(loss=total_loss / (epoch_bar.n + 1))
 
             print(f"Epoch [{epoch + 1}/{self.epochs}], Loss: {total_loss / len(dataloader):.4f}")
+
+        # Save the model after training is complete
+        if self.model_save_path:
+            print(f"Saving model to {self.model_save_path}")
+            torch.save(self.model.state_dict(), self.model_save_path)
