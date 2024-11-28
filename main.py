@@ -9,8 +9,8 @@ from src.training.trainer import train
 def main():
     parser = argparse.ArgumentParser(description="Training a Normalizing Flow for Gravitational Wave Signal Modeling")
     parser.add_argument("--batch_size", type=int, default=64, help="Batch size for training")
-    parser.add_argument("--num_epochs", type=int, default=20, help="Number of epochs for training")
-    parser.add_argument("--learning_rate", type=float, default=1e-5, help="Learning rate for optimizer")
+    parser.add_argument("--num_epochs", type=int, default=10, help="Number of epochs for training")
+    parser.add_argument("--learning_rate", type=float, default=1e-3, help="Learning rate for optimizer")
     parser.add_argument("--input_dim", type=int, default=4096, help="Dimensionality of input signals (length of each signal)")
     parser.add_argument("--hidden_dim", type=int, default=512, help="Dimensionality of hidden layers")
     parser.add_argument("--conditioning_dim", type=int, default=2, help="Dimensionality of conditioning input (e.g., masses)")
@@ -23,9 +23,9 @@ def main():
 
     print("Initializing dataset...")
     dataset = GWDataset(
-        num_samples=128,
-        m1_range=(10, 50),
-        m2_range=(10, 50),
+        num_samples=20000,
+        m1_range=(10, 20),
+        m2_range=(10, 20),
         f_lower=args.f_lower,
         duration=args.duration,
         sample_rate=args.sample_rate,
