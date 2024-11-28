@@ -1,60 +1,48 @@
 import torch
-import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, TensorDataset
-
-
-class NormalizingFlow(nn.Module):
-    def __init__(self, input_dim, hidden_dim):
-        super(NormalizingFlow, self).__init__()
-        self.net = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, input_dim)
-        )
-
-    def forward(self, x):
-        return self.net(x)
-
+from torch.utils.data import DataLoader
+from tqdm import tqdm  # For the progress bar
+from src.models.normalizing_flow import NormalizingFlow
+from src.data.dataset import GWDataset
 
 class Trainer:
-    def __init__(self, model, data, batch_size=64, lr=1e-3, epochs=10):
+    def __init__(self, model, train_data, batch_size=32, lr=1e-3, epochs=100):
+        """
+        Initialize the training setup.
+
+        Parameters:
+        - model: The normalizing flow model
+        - train_data: The training dataset
+        - batch_size: The batch size for training
+        - lr: The learning rate
+        - epochs: The number of epochs to train
+        """
         self.model = model
-        self.data = data
+        self.train_data = train_data
         self.batch_size = batch_size
         self.lr = lr
         self.epochs = epochs
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-        self.dataloader = DataLoader(TensorDataset(self.data), batch_size=self.batch_size, shuffle=True)
-
-        self.optimizer = optim.Adam(self.model.parameters(), lr=self.lr)
-        self.loss_fn = nn.MSELoss()
-
-        self.model.to(self.device)
+        self.optimizer = optim.Adam(model.parameters(), lr=self.lr)
+        self.loss_fn = torch.nn.MSELoss()
 
     def train(self):
-        self.model.train()
+        dataloader = DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True)
+
         for epoch in range(self.epochs):
             total_loss = 0
-            for batch in self.dataloader:
-                signals = batch[0].to(self.device)
+            epoch_bar = tqdm(dataloader, desc=f"Epoch [{epoch + 1}/{self.epochs}]", ncols=100)
 
+            for batch in epoch_bar:
                 self.optimizer.zero_grad()
 
-                output = self.model(signals)
+                log_prob, log_det_jacobian = self.model(batch)
 
-                loss = self.loss_fn(output, signals)
-                total_loss += loss.item()
-
+                loss = -log_prob.mean()
                 loss.backward()
                 self.optimizer.step()
 
-            print(f"Epoch [{epoch + 1}/{self.epochs}], Loss: {total_loss / len(self.dataloader)}")
+                total_loss += loss.item()
+                epoch_bar.set_postfix(loss=total_loss / (epoch_bar.n + 1))
 
-
-def train_flow(model, data, batch_size=64, lr=1e-3, epochs=10):
-    trainer = Trainer(model, data, batch_size, lr, epochs)
-    trainer.train()
+            print(f"Epoch [{epoch + 1}/{self.epochs}], Loss: {total_loss / len(dataloader):.4f}")

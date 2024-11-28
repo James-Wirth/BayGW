@@ -1,43 +1,34 @@
-import numpy as np
-from tqdm import tqdm
+import torch
 from pycbc.waveform import get_td_waveform
+from pycbc import waveform
 
 
-class SignalGenerator:
-    def __init__(self, config, preprocessor):
-        self.config = config
-        self.preprocessor = preprocessor
+def generate_gw_signal(m1, m2, f_lower=30.0, duration=4, sample_rate=2048):
+    """
+    Generate a synthetic gravitational wave signal for given component masses.
 
-    def generate_signal(self, mass1, mass2):
-        hp, _ = get_td_waveform(approximant="IMRPhenomPv2",
-                                mass1=mass1,
-                                mass2=mass2,
-                                delta_t=1.0 / self.config.SAMPLING_RATE,
-                                f_lower=20)
+    Parameters:
+    - m1: Mass of the first component in solar masses
+    - m2: Mass of the second component in solar masses
+    - f_lower: Lower frequency cutoff for the waveform (default 30 Hz)
+    - duration: Duration of the signal in seconds (default 4 seconds)
+    - sample_rate: Sampling rate for the signal (default 2048 Hz)
 
-        signal = hp.numpy()  # Convert waveform to numpy array
+    Returns:
+    - strain: The synthetic gravitational wave strain as a PyTorch tensor
+    """
 
-        # Ensure the signal has the target length (signal_length)
-        signal = signal[:self.config.SIGNAL_LENGTH]  # Truncate to SIGNAL_LENGTH
-        if len(signal) < self.config.SIGNAL_LENGTH:
-            signal = np.pad(signal, (0, self.config.SIGNAL_LENGTH - len(signal)), 'constant')  # Pad if shorter
+    hp, hc = get_td_waveform(
+        approximant="SEOBNRv4",
+        mass1=m1,
+        mass2=m2,
+        f_lower=f_lower,
+        delta_t=1 / sample_rate,
+        duration=duration
+    )
 
-        return signal
+    strain = hp
+    strain_normalized = strain / strain.max()
+    strain_tensor = torch.tensor(strain_normalized, dtype=torch.float32)
 
-    def generate_signals(self, num_signals, mass1_range, mass2_range):
-        """
-        num_signals: Number of signals to generate
-        mass1_range: Range for mass1 (min, max)
-        mass2_range: Range for mass2 (min, max)
-
-        :return: List of generated signals, all padded/truncated to the same length
-        """
-        signals = []
-        print("Generating gravitational wave signals...")
-        for _ in tqdm(range(num_signals)):
-            mass1 = np.random.uniform(*mass1_range)
-            mass2 = np.random.uniform(*mass2_range)
-            signal = self.generate_signal(mass1, mass2)
-            signal = self.preprocessor.pad_or_truncate(signal)
-            signals.append(signal)
-        return np.array(signals)
+    return strain_tensor

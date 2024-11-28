@@ -1,68 +1,42 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-
 
 class NormalizingFlow(nn.Module):
     def __init__(self, input_dim, hidden_dim=512, n_flows=5):
-        """
-        input_dim: Dimension of input data (signal length)
-        hidden_dim: Size of hidden layers in the flow model
-        n_flows: Number of transformations (flow layers) to use
-        """
         super(NormalizingFlow, self).__init__()
-
         self.input_dim = input_dim
         self.n_flows = n_flows
-        self.flows = nn.ModuleList()
+        self.flows = nn.ModuleList([FlowLayer(input_dim, hidden_dim) for _ in range(n_flows)])
+        self.base_distribution = torch.distributions.Normal(torch.zeros(input_dim), torch.ones(input_dim))
 
-        for _ in range(n_flows):
-            self.flows.append(FlowLayer(input_dim, hidden_dim))
 
     def forward(self, x):
-        """
-        x: Input tensor of shape (batch_size, input_dim)
-
-        :return: Transformed tensor and log determinant of Jacobian
-        """
         log_det_Jacobian = 0
-
+        z = x
         for flow in self.flows:
-            x, log_det = flow(x)
+            z, log_det = flow(z)
             log_det_Jacobian += log_det
 
-        return x, log_det_Jacobian
+        log_prob_base = self.base_distribution.log_prob(z).sum(dim=1)
+        log_prob = log_prob_base + log_det_Jacobian
+
+        return log_prob, log_det_Jacobian
 
     def reverse(self, z):
-        """
-        z: Tensor of transformed data (latent space)
-
-        :return: Reversed data (original space)
-        """
         for flow in reversed(self.flows):
             z = flow.reverse(z)
         return z
 
     def sample(self, num_samples):
-        """
-        num_samples: Number of samples to generate
-
-        :return: Tensor of shape (num_samples, input_dim) with new samples
-        """
         z = torch.randn(num_samples, self.input_dim)
         return self.reverse(z)
 
 
 class FlowLayer(nn.Module):
     def __init__(self, input_dim, hidden_dim):
-        """
-        input_dim: Dimension of input data (signal length)
-        hidden_dim: Size of hidden layers in the flow layer
-        """
         super(FlowLayer, self).__init__()
 
         self.input_dim = input_dim
-
         self.net = nn.Sequential(
             nn.Linear(input_dim // 2, hidden_dim),
             nn.ReLU(),
@@ -72,39 +46,25 @@ class FlowLayer(nn.Module):
         self.mask = self.create_mask(input_dim)
 
     def forward(self, x):
-        """
-        x: Input tensor of shape (batch_size, input_dim)
+        x1 = x[:, :self.input_dim // 2]
+        x2 = x[:, self.input_dim // 2:]
 
-        :return: Transformed tensor and log determinant of Jacobian
-        """
-        x1 = x * self.mask
-        x2 = x * (1 - self.mask)
         s = self.net(x2)
-        y = x1 + s
+        y = torch.cat((x1, x2 + s), dim=1)
 
         log_det_Jacobian = torch.sum(torch.log(torch.abs(1 + s)), dim=1)
         return y, log_det_Jacobian
 
     def reverse(self, y):
-        """
-        y: Transformed tensor
-
-        :return: Reversed data
-        """
-        y1 = y * self.mask
-        y2 = y * (1 - self.mask)
+        y1 = y[:, :self.input_dim // 2]
+        y2 = y[:, self.input_dim // 2:]
 
         s = self.net(y2)
-
-        x = y1 - s
+        x = torch.cat((y1, y2 - s), dim=1)
         return x
 
     def create_mask(self, input_dim):
-        """
-        input_dim: Dimension of input data
-
-        :return: Mask tensor (binary mask)
-        """
         mask = torch.zeros(input_dim)
         mask[::2] = 1
         return mask
+
