@@ -9,18 +9,20 @@ class SignalGenerator:
         self.preprocessor = preprocessor
 
     def generate_signal(self, mass1, mass2):
-        """
-        mass1: Mass of the first object in solar masses
-        mass2: Mass of the second object in solar masses
-
-        :return: Time-domain gravitational wave signal
-        """
         hp, _ = get_td_waveform(approximant="IMRPhenomPv2",
                                 mass1=mass1,
                                 mass2=mass2,
                                 delta_t=1.0 / self.config.SAMPLING_RATE,
                                 f_lower=20)
-        return hp.numpy()
+
+        signal = hp.numpy()  # Convert waveform to numpy array
+
+        # Ensure the signal has the target length (signal_length)
+        signal = signal[:self.config.SIGNAL_LENGTH]  # Truncate to SIGNAL_LENGTH
+        if len(signal) < self.config.SIGNAL_LENGTH:
+            signal = np.pad(signal, (0, self.config.SIGNAL_LENGTH - len(signal)), 'constant')  # Pad if shorter
+
+        return signal
 
     def generate_signals(self, num_signals, mass1_range, mass2_range):
         """
