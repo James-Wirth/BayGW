@@ -32,15 +32,12 @@ class GWDataset(Dataset):
         return self.num_samples
 
     def __getitem__(self, idx):
-        # Randomly sample mass values for the binary system
         m1 = self.m1_range[0] + (self.m1_range[1] - self.m1_range[0]) * torch.rand(size=(1,))
         m2 = self.m2_range[0] + (self.m2_range[1] - self.m2_range[0]) * torch.rand(size=(1,))
 
-        # Generate a GW signal for these masses
         signal = generate_gw_signal(m1.item(), m2.item(), f_lower=self.f_lower,
                                     duration=self.duration, sample_rate=self.sample_rate)
 
-        # Apply padding or trimming to the signal
         signal_length = len(signal)
         if signal_length < self.input_dim:
             padding = self.input_dim - signal_length
@@ -48,4 +45,4 @@ class GWDataset(Dataset):
         elif signal_length > self.input_dim:
             signal = signal[:self.input_dim]
 
-        return signal, torch.cat([m1, m2])  # Return the signal and the masses as a tuple
+        return signal, torch.cat([m1, m2])

@@ -7,7 +7,6 @@ from src.training.trainer import train
 
 
 def main():
-    # Argument parsing
     parser = argparse.ArgumentParser(description="Training a Normalizing Flow for Gravitational Wave Signal Modeling")
     parser.add_argument("--batch_size", type=int, default=64, help="Batch size for training")
     parser.add_argument("--num_epochs", type=int, default=20, help="Number of epochs for training")
@@ -22,10 +21,9 @@ def main():
     parser.add_argument("--duration", type=int, default=2, help="Duration of the waveform signal (seconds)")
     args = parser.parse_args()
 
-    # Dataset initialization
     print("Initializing dataset...")
     dataset = GWDataset(
-        num_samples=10000,
+        num_samples=128,
         m1_range=(10, 50),
         m2_range=(10, 50),
         f_lower=args.f_lower,
@@ -35,36 +33,29 @@ def main():
     )
     print("Dataset initialized")
 
-    # Split dataset into training and validation sets (90/10 split)
     print("Splitting dataset into training and validation sets...")
     train_size = int(0.9 * len(dataset))
     val_size = len(dataset) - train_size
     train_data, val_data = random_split(dataset, [train_size, val_size])
     print(f"Training size: {train_size}, Validation size: {val_size}")
 
-    # Create DataLoaders for training and validation
     train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True)
     val_loader = DataLoader(val_data, batch_size=args.batch_size, shuffle=False)
     print("DataLoader initialized")
 
-    # Model initialization
     print("Initializing model...")
     model = RealNVP(input_dim=args.input_dim, hidden_dim=args.hidden_dim, conditioning_dim=args.conditioning_dim)
     model.to(args.device)
     print("Model initialized")
 
-    # Optimizer initialization
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
     print("Optimizer initialized")
 
-    # Learning rate scheduler initialization
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=3, factor=0.1, verbose=True)
 
-    # Training loop
     print(f"Training on {args.device} with input_dim={args.input_dim}, hidden_dim={args.hidden_dim}, batch_size={args.batch_size}")
     train(model, train_loader, val_loader, optimizer, scheduler, num_epochs=args.num_epochs, device=args.device)
 
-    # Save the trained model
     print("Saving the trained model...")
     torch.save(model.state_dict(), "realnvp_model.pth")
     print("Model saved")
