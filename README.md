@@ -1,4 +1,4 @@
-# BayGW
+# BayeGW
 
 ## Under construction 🛠️
 
